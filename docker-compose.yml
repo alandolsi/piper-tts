@@ -1,0 +1,30 @@
+services:
+  piper-tts:
+    build: .
+    container_name: piper-tts
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - piper_tts_cache:/cache
+    environment:
+      - CACHE_DIR=/cache
+      - PIPER_MODEL_PATH=/models/de_DE-eva_k-x-low.onnx
+      - LOG_LEVEL=INFO
+      - MAX_TEXT_LENGTH=5000
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    cpus: 2.0
+    mem_limit: 4g
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 4G
+
+volumes:
+  piper_tts_cache:
