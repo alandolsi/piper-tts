@@ -13,6 +13,11 @@ from pydantic import BaseModel, Field
 MODEL_PATH = Path(os.getenv("PIPER_MODEL_PATH", "/models/de_DE-eva_k-x-low.onnx"))
 CACHE_DIR = Path(os.getenv("CACHE_DIR", "/cache"))
 MAX_TEXT_LENGTH = int(os.getenv("MAX_TEXT_LENGTH", "5000"))
+PIPER_LENGTH_SCALE = float(os.getenv("PIPER_LENGTH_SCALE", "1.08"))
+PIPER_NOISE_SCALE = float(os.getenv("PIPER_NOISE_SCALE", "0.6"))
+PIPER_NOISE_W = float(os.getenv("PIPER_NOISE_W", "0.75"))
+_speaker = os.getenv("PIPER_SPEAKER", "").strip()
+PIPER_SPEAKER = int(_speaker) if _speaker else None
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),
@@ -31,7 +36,11 @@ class TTSRequest(BaseModel):
 
 
 def _text_hash(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+    cache_key = (
+        f"{MODEL_PATH.name}|{PIPER_LENGTH_SCALE}|{PIPER_NOISE_SCALE}|"
+        f"{PIPER_NOISE_W}|{PIPER_SPEAKER}|{text}"
+    )
+    return hashlib.sha256(cache_key.encode("utf-8")).hexdigest()
 
 
 async def _lock_for_key(key: str) -> asyncio.Lock:
@@ -44,12 +53,24 @@ async def _lock_for_key(key: str) -> asyncio.Lock:
 
 
 async def _synthesize_to_file(text: str, output_path: Path) -> None:
-    process = await asyncio.create_subprocess_exec(
+    command = [
         "piper",
         "--model",
         str(MODEL_PATH),
         "--output_file",
         str(output_path),
+        "--length_scale",
+        str(PIPER_LENGTH_SCALE),
+        "--noise_scale",
+        str(PIPER_NOISE_SCALE),
+        "--noise_w",
+        str(PIPER_NOISE_W),
+    ]
+    if PIPER_SPEAKER is not None:
+        command.extend(["--speaker", str(PIPER_SPEAKER)])
+
+    process = await asyncio.create_subprocess_exec(
+        *command,
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.DEVNULL,
         stderr=asyncio.subprocess.PIPE,
@@ -68,6 +89,14 @@ async def startup_event() -> None:
     if not MODEL_PATH.exists():
         logger.error("Model file not found at %s", MODEL_PATH)
         raise RuntimeError(f"Model file not found: {MODEL_PATH}")
+    logger.info(
+        "Using Piper model=%s length_scale=%s noise_scale=%s noise_w=%s speaker=%s",
+        MODEL_PATH,
+        PIPER_LENGTH_SCALE,
+        PIPER_NOISE_SCALE,
+        PIPER_NOISE_W,
+        PIPER_SPEAKER,
+    )
 
 
 @app.get("/health")

@@ -41,3 +41,10 @@ curl -sS -X POST http://localhost:8000/tts \
 - Deploy with Docker Compose using this repository.
 - Expose service port `8000`.
 - Keep `/cache` mapped to persistent storage.
+
+## Voice Tuning
+
+- `PIPER_LENGTH_SCALE`: speaking speed (`>1.0` slower, `<1.0` faster)
+- `PIPER_NOISE_SCALE`: voice variation (lower is more stable)
+- `PIPER_NOISE_W`: phoneme variation (lower is cleaner)
+- `PIPER_SPEAKER`: speaker id (for multi-speaker models)
