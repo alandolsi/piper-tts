@@ -1,12 +1,13 @@
 import asyncio
 import hashlib
+import hmac
 import logging
 import os
 import tempfile
 from pathlib import Path
 from typing import Dict
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
@@ -17,6 +18,8 @@ PIPER_LENGTH_SCALE = float(os.getenv("PIPER_LENGTH_SCALE", "1.08"))
 PIPER_NOISE_SCALE = float(os.getenv("PIPER_NOISE_SCALE", "0.6"))
 PIPER_NOISE_W = float(os.getenv("PIPER_NOISE_W", "0.75"))
 _speaker = os.getenv("PIPER_SPEAKER", "").strip()
+# Pflicht-Key fuer /tts. Ohne gesetzten Key lehnt der Dienst alles ab (fail closed).
+PIPER_API_KEY = os.getenv("PIPER_API_KEY", "").strip()
 PIPER_SPEAKER = int(_speaker) if _speaker else None
 
 logging.basicConfig(
@@ -25,10 +28,26 @@ logging.basicConfig(
 )
 logger = logging.getLogger("piper-tts")
 
-app = FastAPI(title="Piper TTS API", version="1.0.0")
+# Keine oeffentliche API-Doku: /docs, /redoc und /openapi.json sind abgeschaltet.
+app = FastAPI(
+    title="Piper TTS API",
+    version="1.0.0",
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
+)
 
 _lock_registry: Dict[str, asyncio.Lock] = {}
 _registry_guard = asyncio.Lock()
+
+
+async def require_api_key(x_api_key: str | None = Header(default=None)) -> None:
+    if not PIPER_API_KEY:
+        raise HTTPException(status_code=503, detail="TTS is not configured")
+    if not x_api_key or not hmac.compare_digest(
+        x_api_key.encode("utf-8"), PIPER_API_KEY.encode("utf-8")
+    ):
+        raise HTTPException(status_code=401, detail="Unauthorized")
 
 
 class TTSRequest(BaseModel):
@@ -89,6 +108,8 @@ async def startup_event() -> None:
     if not MODEL_PATH.exists():
         logger.error("Model file not found at %s", MODEL_PATH)
         raise RuntimeError(f"Model file not found: {MODEL_PATH}")
+    if not PIPER_API_KEY:
+        logger.error("PIPER_API_KEY is not set - all /tts requests will be rejected")
     logger.info(
         "Using Piper model=%s length_scale=%s noise_scale=%s noise_w=%s speaker=%s",
         MODEL_PATH,
@@ -104,7 +125,7 @@ async def health() -> JSONResponse:
     return JSONResponse(status_code=200, content={"status": "ok"})
 
 
-@app.post("/tts")
+@app.post("/tts", dependencies=[Depends(require_api_key)])
 async def tts(payload: TTSRequest) -> FileResponse:
     text = payload.text.strip()
     if not text:

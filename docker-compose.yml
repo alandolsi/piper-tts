@@ -11,7 +11,8 @@ services:
       - CACHE_DIR=/cache
       - PIPER_MODEL_PATH=/models/de_DE-eva_k-x-low.onnx
       - LOG_LEVEL=INFO
-      - MAX_TEXT_LENGTH=50000
+      - MAX_TEXT_LENGTH=5000
+      - PIPER_API_KEY=${PIPER_API_KEY}
       - PIPER_LENGTH_SCALE=1.08
       - PIPER_NOISE_SCALE=0.6
       - PIPER_NOISE_W=0.75
